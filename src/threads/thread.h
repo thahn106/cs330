@@ -87,12 +87,16 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
+    int priority;                       /* Current priority. */
+    int base_priority;                  /* Starting priority of thread. */
     int64_t alarmtime;                  /* Time to wake up thread. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     struct list_elem sleep_elem;         /* Element in full thread list. */
+
+    struct lock *waiting_lock;
+    struct list holding_locks;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -132,8 +136,8 @@ const char *thread_name (void);
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
-bool strict_priority (const struct list_elem *first,
-   const struct list_elem *second, void *aux UNUSED);
+bool strict_priority (const struct list_elem *,
+   const struct list_elem*, void *);
 
 void check_priority (void);
 
@@ -144,5 +148,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void donate_priority (struct thread *,const int);
+void reset_priority (void);
 
 #endif /* threads/thread.h */

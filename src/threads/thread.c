@@ -106,6 +106,8 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&sleep_list);
 
+
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -401,7 +403,7 @@ check_priority(void)
   if(!list_empty(&ready_list))
   {
     struct thread *front = list_entry(list_front(&ready_list), struct thread, elem);
-    if (thread_current()->priority < front->priority)
+    if (thread_get_priority() < front->priority)
       thread_yield();
   }
 }
@@ -452,7 +454,42 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
-
+
+void
+donate_priority (struct thread *target, const int waiter_priority)
+{
+  if (target->priority < waiter_priority)
+  {
+    target->priority =  waiter_priority;
+    if(target->waiting_lock)
+    {
+      donate_priority(target->waiting_lock->holder, waiter_priority);
+    }
+  }
+}
+
+void
+reset_priority(void)
+{
+  enum intr_level old_level = intr_disable ();
+  struct thread *curr = thread_current();
+  curr->priority = curr->base_priority;
+  struct list_elem *e;
+  if (!list_empty(&curr->holding_locks)){
+    for (e = list_begin(&curr->holding_locks); e !=list_end(&curr->holding_locks); e = list_next(e))
+    {
+      int temp = lock_priority(list_entry(e, struct lock, elem));
+      if (temp > curr->priority)
+        curr->priority = temp;
+    }
+  }
+  intr_set_level (old_level);
+}
+
+
+
+
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -537,6 +574,11 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
+
+  t->waiting_lock =  NULL;
+  list_init(&t->holding_locks);
+
   t->magic = THREAD_MAGIC;
 
   t->alarmtime = 0;
