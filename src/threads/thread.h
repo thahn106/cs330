@@ -88,9 +88,11 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int64_t alarmtime;                  /* Time to wake up thread. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list_elem sleep_elem;         /* Element in full thread list. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -115,6 +117,11 @@ void thread_print_stats (void);
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
+void thread_sleep (int64_t time);
+int64_t check_awake (int64_t time);
+
+void print_status (void);
+
 void thread_block (void);
 void thread_unblock (struct thread *);
 
@@ -124,6 +131,11 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+
+bool strict_priority (const struct list_elem *first,
+   const struct list_elem *second, void *aux UNUSED);
+
+void check_priority (void);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
