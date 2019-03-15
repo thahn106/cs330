@@ -93,10 +93,11 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    struct list_elem sleep_elem;         /* Element in full thread list. */
+    struct list_elem sleep_elem;        /* Element in full thread list. */
+    struct list_elem donor_elem;        /* Element to track donation chains*/
 
     struct lock *waiting_lock;
-    struct list holding_locks;
+    struct list donor_list;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -129,6 +130,8 @@ void print_status (void);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
+void clear_lock (struct lock *);
+
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
@@ -149,7 +152,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-void donate_priority (struct thread *,const int);
+void donate_priority (void);
 void reset_priority (void);
 
 #endif /* threads/thread.h */
