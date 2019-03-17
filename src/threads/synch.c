@@ -208,6 +208,7 @@ lock_acquire (struct lock *lock)
 
   struct thread *curr = thread_current();
 
+  /* Donate priority to the holder of the lock (if !mlfqs) */
   if (!thread_mlfqs && lock->holder)
   {
     curr->waiting_lock = lock;
@@ -254,9 +255,9 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  // enum intr_level old_level = intr_disable();
   lock->holder = NULL;
 
+  /* Clear waiters on lock and update donated priority */
   if(!thread_mlfqs)
   {
     clear_lock(lock);
@@ -264,8 +265,6 @@ lock_release (struct lock *lock)
   }
 
   sema_up (&lock->semaphore);
-
-  // intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -279,22 +278,21 @@ lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
-int lock_priority (const struct lock *lock)
-{
-  int highest=0;
-  struct list waits =  lock->semaphore.waiters;
-  if (!list_empty(&waits))
-  {
-    // printf("TESTING\n");
-    struct list_elem *e;
-    for (e = list_begin(&waits); e != list_end(&waits); e = list_next(e))
-    {
-      if (highest < list_entry(e, struct thread, elem)->priority)
-        highest = list_entry(e, struct thread, elem)->priority;
-    }
-  }
-  return highest;
-}
+// int lock_priority (const struct lock *lock)
+// {
+//   int highest=0;
+//   struct list waits =  lock->semaphore.waiters;
+//   if (!list_empty(&waits))
+//   {
+//     struct list_elem *e;
+//     for (e = list_begin(&waits); e != list_end(&waits); e = list_next(e))
+//     {
+//       if (highest < list_entry(e, struct thread, elem)->priority)
+//         highest = list_entry(e, struct thread, elem)->priority;
+//     }
+//   }
+//   return highest;
+// }
 
 
 

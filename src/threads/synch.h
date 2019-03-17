@@ -29,7 +29,7 @@ void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
-int lock_priority (const struct lock *); /* Returns the higest priority of waiters. */
+// int lock_priority (const struct lock *); /* Returns the higest priority of waiters. */
 
 
 /* Condition variable. */

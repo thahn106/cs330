@@ -103,9 +103,6 @@ timer_sleep (int64_t time)
   int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
 
-  // while (timer_elapsed(start)<ticks)
-  //   thread_yield();
-
   if (start+time<=alarm_ring)
     alarm_ring=start+time;
 
@@ -146,27 +143,31 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  /* Mlfqs background tasks */
   if (thread_mlfqs)
   {
     inc_recent_cpu();
+    /* Updates that occur every second */
     if (ticks % TIMER_FREQ == 0)
     {
       update_load_avg();
       update_recent_cpu();
     }
+    /*  Updates mlfqs priority every 4 ticks */
     if (ticks % 4 == 0)
     {
         mlfqs_check(thread_current());
     }
   }
 
+  /* Wakes up sleeping threads if alarm is scheduled  */
   if (alarm_ring <= ticks)
   {
     int64_t temp= check_awake(ticks);
     if (temp != INT_MAX)
       alarm_ring = temp;
   }
-  // check_priority();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

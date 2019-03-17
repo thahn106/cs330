@@ -100,10 +100,10 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     struct list_elem sleep_elem;        /* Element in full thread list. */
-    struct list_elem donor_elem;        /* Element to track donation chains*/
+    struct list_elem donor_elem;        /* Element to track donation chains */
 
-    struct lock *waiting_lock;
-    struct list donor_list;
+    struct lock *waiting_lock;          /* Lock that thread is waiting on */
+    struct list donor_list;             /* Threads waiting on lock held by this thread */
 
     /* Data needed for mlfqs */
     int nice;
