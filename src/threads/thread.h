@@ -24,6 +24,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* Mlfqs constants */
+#define NICE_MIN -20
+#define NICE_DEFAULT 0
+#define NICE_MAX 20
+
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -87,10 +93,21 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
+    int priority;                       /* Current priority. */
+    int base_priority;                  /* Starting priority of thread. */
+    int64_t alarmtime;                  /* Time to wake up thread. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list_elem sleep_elem;        /* Element in full thread list. */
+    struct list_elem donor_elem;        /* Element to track donation chains */
+
+    struct lock *waiting_lock;          /* Lock that thread is waiting on */
+    struct list donor_list;             /* Threads waiting on lock held by this thread */
+
+    /* Data needed for mlfqs */
+    int nice;
+    int recent_cpu;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -115,8 +132,15 @@ void thread_print_stats (void);
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
+void thread_sleep (int64_t time);
+int64_t check_awake (int64_t time);
+
+void print_status (void);
+
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+void clear_lock (struct lock *);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -125,12 +149,28 @@ const char *thread_name (void);
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
+bool strict_priority (const struct list_elem *,
+   const struct list_elem*, void *);
+
+void check_priority (void);
+
 int thread_get_priority (void);
 void thread_set_priority (int);
 
 int thread_get_nice (void);
 void thread_set_nice (int);
-int thread_get_recent_cpu (void);
+
+void update_load_avg (void);
 int thread_get_load_avg (void);
+
+void inc_recent_cpu (void);
+void update_recent_cpu (void);
+void thread_update_recent_cpu (struct thread *);
+int thread_get_recent_cpu (void);
+
+void donate_priority (void);
+void reset_priority (void);
+
+void mlfqs_check(struct thread *);
 
 #endif /* threads/thread.h */
