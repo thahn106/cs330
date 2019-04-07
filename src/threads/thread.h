@@ -116,25 +116,23 @@ struct thread
 #endif
 
     /* Child-parent relationship */
-    struct thread *parent;  /* parent process pointer */
-    struct list child_list; /* linked list of child processes */
-    struct list_elem child_elem; /* element struct for child_list */
+    struct thread *parent;              /* Parent process pointer */
+    struct list child_list;             /* linked list of child processes */
+    struct list_elem child_elem;        /* Element struct for child_list */
 
-    struct semaphore exit_lock;
-    struct semaphore load_lock;
-    struct semaphore delete_lock;
+    /* Process synchronization semaphores */
+    struct semaphore load_lock;         /* Makes sure parent waits for child to load */
+    struct semaphore exit_lock;         /* Makes sure parent waits for child to exit */
+    struct semaphore delete_lock;       /* Makes sure child waits for parent to prepare deletion */
 
-    bool exited;
-
-    int load_status; /* when this process(or thread) load program to memory, set this value */
-    int exit_status; /* when this process(or thread) dying, set this value */
+    /* Process load/exit status calls */
+    int load_status;                    /* loading:0, loaded: 1, load failed: -1 */
+    int exit_status;                    /* Proper exit: 0, error code otherwise */
 
     /* File system */
-    struct list file_list;
-    int fd;
-    struct file* execfile;
-
-
+    struct list file_list;              /* List of files owned by process */
+    int fd;                             /* Current file descriptor count */
+    struct file* execfile;              /* Stores own executable as execfile */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
