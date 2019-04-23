@@ -198,7 +198,13 @@ thread_create (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
+
+  /* Set current thread as the parent of spawned child */
+  t->parent = thread_current ();
   tid = t->tid = allocate_tid ();
+
+  /* Add new thread to child_list */
+  list_push_back (&thread_current()->child_list, &t->child_elem);
 
   enum intr_level old_level = intr_disable();
 
@@ -366,6 +372,12 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
+  struct thread *curr= thread_current();
+
+  /* If thread was exiting from a proper load, print exit message */
+  if (curr->load_status!=-1)
+    printf ("%s: exit(%d)\n", curr->name, curr->exit_status);
+
 #ifdef USERPROG
   process_exit ();
 #endif
@@ -374,7 +386,14 @@ thread_exit (void)
      We will be destroyed during the call to schedule_tail(). */
   intr_disable ();
 
-  thread_current ()->status = THREAD_DYING;
+  /* Tells parent process is exiting */
+  sema_up (&curr->exit_lock);
+
+  /* Waits for parent to release process */
+  sema_down(&curr->delete_lock);
+
+  curr->status = THREAD_DYING;
+
   schedule ();
   NOT_REACHED ();
 }
@@ -732,6 +751,24 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donor_list);
 
   t->magic = THREAD_MAGIC;
+
+  /* Assignment 2 parent relationship */
+  t->parent = NULL;
+  list_init(&t->child_list);
+
+  /* Assignment 2 load checks */
+  t->load_status = 0;
+  t->exit_status = 0;
+
+  /* Process synchronization semaphores */
+  sema_init (&t->load_lock, 0);
+  sema_init (&t->exit_lock, 0);
+  sema_init (&t->delete_lock, 0);
+
+  /* Assignment 2 file descriptors */
+  list_init(&t->file_list);
+  t->fd = 2;              /* Skips stdin/stdout  */
+  t->execfile = NULL;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
