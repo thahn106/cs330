@@ -19,6 +19,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp, char **save_ptr);
@@ -35,13 +36,15 @@ process_execute (const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
+  // fn_copy = palloc_get_page (0);
+  fn_copy = frame_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
   char *file_name_str;
-  file_name_str = palloc_get_page(0);
+  // file_name_str = palloc_get_page(0);
+  file_name_str = frame_get_page(0);
   strlcpy (file_name_str, file_name, PGSIZE);
 
   char *save_ptr;
@@ -52,9 +55,11 @@ process_execute (const char *file_name)
 
   /* Free pages here */
   if (tid==TID_ERROR)
-    palloc_free_page (fn_copy);
+    // palloc_free_page (fn_copy);
+    frame_free_page(fn_copy);
 
-  palloc_free_page(file_name_str);
+    // palloc_free_page(file_name_str);
+  frame_free_page(file_name_str);
   return tid;
 }
 
@@ -77,7 +82,8 @@ start_process (void *f_name)
 
   success = load (file_name_str, &if_.eip, &if_.esp, &save_ptr);
 
-  palloc_free_page (f_name);
+  frame_free_page(f_name);
+  //palloc_free_page (f_name);
   struct thread *curr = thread_current ();
   if (!success)
   {
@@ -149,7 +155,8 @@ process_exit (void)
   {
     child = list_entry (e, struct thread, child_elem);
     list_remove(e);
-    palloc_free_page (child);
+    // palloc_free_page (child);
+    frame_free_page(child);
   }
 
   process_close_file(-1); // Closes all files associated with the file
@@ -462,14 +469,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      // uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = frame_get_page (PAL_USER);
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          // palloc_free_page (kpage);
+          frame_free_page(kpage);
           return false;
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -477,7 +486,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable))
         {
-          palloc_free_page (kpage);
+          // palloc_free_page (kpage);
+          frame_free_page (kpage);
           return false;
         }
 
@@ -496,7 +506,8 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
 {
   uint8_t *kpage;
   bool success = false;
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  // kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_get_page (PAL_USER | PAL_ZERO);
 
   /* If no page was allocated return error */
   if (!kpage)
@@ -507,7 +518,8 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
     *esp = PHYS_BASE;
   else
   {
-    palloc_free_page (kpage);
+    // palloc_free_page (kpage);
+    frame_free_page (kpage);
     return success;
   }
 
@@ -532,8 +544,6 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
       if (!argv)
         return false;
     }
-    if (argv_size > 16)
-      return false;
     memcpy(*esp, str, strlen(str) + 1);
   }
   argv[argc] = 0;
