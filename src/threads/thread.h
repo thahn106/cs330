@@ -134,6 +134,11 @@ struct thread
     int fd;                             /* Current file descriptor count */
     struct file* execfile;              /* Stores own executable as execfile */
 
+    /* Supplementary page table */
+    struct list spt;
+
+
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

@@ -7,7 +7,7 @@
 struct frame
 {
   void *kpage;
-  void *vp;
+  struct spte *spte;
   struct thread *owner;
   struct list_elem elem;
 };
@@ -19,6 +19,7 @@ static struct lock frame_lock;
 void frame_init(void);
 void *frame_get_page(enum palloc_flags);
 void frame_free_page(void*);
-void update_frame(void*);
+struct frame *frame_find(void*);
+void update_frame_spte(void*, struct spte*);
 
-#endif VM_FRAME_H /* vm/frame.h */
+#endif /* vm/frame.h */

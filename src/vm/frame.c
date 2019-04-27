@@ -23,8 +23,13 @@ void
     lock_release(&frame_lock);
     PANIC("Page table full");
   }
-
-  update_frame(p);
+  else{
+    /* Make new frame */
+    struct frame *f = (struct frame *) malloc(sizeof(struct frame));
+    f->kpage = p;
+    f->owner = thread_current();
+    list_push_back(&frame_list, &f->elem);
+  }
   lock_release(&frame_lock);
   return p;
 }
@@ -40,7 +45,8 @@ frame_free_page(void *kpage)
   for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
   {
     f = list_entry(e, struct frame, elem);
-    if (f->kpage==kpage){
+    if (f->kpage==kpage)
+    {
       list_remove(e);
       palloc_free_page(kpage);
       free(f);
@@ -52,12 +58,30 @@ frame_free_page(void *kpage)
   lock_release(&frame_lock);
 }
 
-void
-update_frame(void *p)
+struct frame*
+frame_find(void* kpage)
 {
-  struct frame *f = (struct frame *) malloc(sizeof(struct frame));
-  f->kpage = p;
-  f->owner = thread_current();
+  struct frame *f;
+  lock_acquire(&frame_lock);
+  struct list_elem *e;
+  for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
+  {
+    f = list_entry(e, struct frame, elem);
+    if (f->kpage==kpage)
+    {
+      lock_release(&frame_lock);
+      return f;
+    }
+  }
+  /* Invalid kpage pointer */
+  lock_release(&frame_lock);
+  return NULL;
+}
 
-  list_push_back(&frame_list, &f->elem);
+void
+update_frame_spte(void* kpage, struct spte* spte)
+{
+  struct frame* frame = frame_find(kpage);
+  if (frame!=NULL)
+    frame->spte=spte;
 }

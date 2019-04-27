@@ -769,6 +769,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->file_list);
   t->fd = 2;              /* Skips stdin/stdout  */
   t->execfile = NULL;
+
+  /* Supplementary page table */
+  list_init(&t->spt);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
