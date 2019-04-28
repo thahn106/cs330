@@ -393,7 +393,7 @@ load (const char *file_name, void (**eip) (void), void **esp, char **save_ptr)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+// static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -493,7 +493,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         frame_free_page (kpage);
         return false;
       }
-      spt_install_page(&thread_current()->spt, upage, kpage, writable);
+      spt_install_page(&thread_current()->spt, upage, kpage, writable, SPTE_ELF_LOADED);
 
       /* Advance. */
       read_bytes -= page_read_bytes;
@@ -520,7 +520,7 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
   success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
   if (success)
   {
-    spt_install_page(&thread_current()->spt, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    spt_install_page(&thread_current()->spt, ((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true, SPTE_MEMORY);
     *esp = PHYS_BASE;
   }
   else
@@ -589,7 +589,7 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();

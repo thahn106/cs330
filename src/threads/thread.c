@@ -772,6 +772,9 @@ init_thread (struct thread *t, const char *name, int priority)
 
   /* Supplementary page table */
   list_init(&t->spt);
+
+  /* Mmap mapping */
+  t->mapping = 0;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

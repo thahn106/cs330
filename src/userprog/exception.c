@@ -2,9 +2,12 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
-#include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/syscall.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -153,10 +156,44 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+
+  bool loaded = false;
+  if (is_user_vaddr(fault_addr))
+  {
+    if (not_present)
+    {
+      struct spte *spte = spt_get_page(&thread_current()->spt,fault_addr);
+      /* Not loaded */
+      if (spte!=NULL)
+      {
+        switch(spte->status)
+        {
+          case SPTE_SWAPPED:
+            break;
+          case SPTE_ELF_NOT_LOADED:
+            break;
+          case SPTE_MMAP_NOT_LOADED:
+            loaded = load_mmap(spte);
+            break;
+          default:
+            break;
+        }
+      }
+      /* Grow stack if fault_addr is within expected range of stack */
+      else if (fault_addr > USER_VADDR_BOTTOM && fault_addr >= f->esp-32)
+      {
+        loaded = spt_grow(fault_addr);
+      }
+
+    }
+  }
+  if (!loaded)
+  {
+    printf ("Page fault at %p: %s error %s page in %s context.\n",
+    fault_addr,
+    not_present ? "not present" : "rights violation",
+    write ? "writing" : "reading",
+    user ? "user" : "kernel");
+    kill (f);
+  }
 }

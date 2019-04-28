@@ -13,8 +13,6 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 
-#define USER_VADDR_BOTTOM ((void *) 0x08048000)
-
 static void syscall_handler (struct intr_frame *);
 
 /* Helper functions */
@@ -130,6 +128,18 @@ syscall_handler (struct intr_frame *f UNUSED)
       pull_args(f, &arg[0], 1);
     	close(arg[0]);
     	break;
+    }
+    case SYS_MMAP:
+    {
+      pull_args(f, &arg[0], 2);
+      f->eax = mmap(arg[0], (const void *) arg[1]);
+      break;
+    }
+    case SYS_MUNMAP:
+    {
+      pull_args(f, &arg[0], 1);
+      munmap(arg[0]);
+      break;
     }
   }
 }
@@ -308,10 +318,10 @@ tell (int fd)
   lock_acquire(&files_lock);
   struct file *f = process_get_file(fd);
   if (!f)
-    {
-      lock_release(&files_lock);
-      return -1;
-    }
+  {
+    lock_release(&files_lock);
+    return -1;
+  }
   off_t offset = file_tell(f);
   lock_release(&files_lock);
 
@@ -326,6 +336,55 @@ close (int fd)
   lock_release(&files_lock);
 }
 
+mapid_t
+mmap (int fd, const void *addr)
+{
+  off_t offset;
+  struct spte* spte;
+  struct thread *curr= thread_current();
+  struct list *spt=&curr->spt;
+  mapid_t mapping;;
+  /* Fail conditions */
+  if (filesize(fd)==0)
+    return -1;
+  if((uint32_t) addr % PGSIZE != 0 || addr == NULL)
+    return -1;
+  if (fd == 0 || fd == 1)
+    return -1;
+
+  lock_acquire(&files_lock);
+  struct file *f = process_get_file(fd);
+  if (!f)
+  {
+    lock_release(&files_lock);
+    return -1;
+  }
+  for (offset = 0; offset < file_length(f); offset += PGSIZE)
+  {
+    if(spt_get_page(spt, addr+offset)!=NULL)
+    {
+      lock_release(&files_lock);
+      return -1;
+    }
+  }
+  curr->mapping++;
+  mapping=curr->mapping;
+  for (offset = 0; offset < file_length(f); offset += PGSIZE)
+  {
+    spte = spt_add_entry(spt, addr+offset, true, SPTE_MMAP_NOT_LOADED);
+    spte->fd = fd;
+    spte->offset = offset;
+    spte->mapping = mapping;
+  }
+  lock_release(&files_lock);
+  return mapping;
+}
+
+void
+munmap (mapid_t mapping)
+{
+  spt_munmap(mapping);
+}
 
 /* Helper functions */
 /* Pulls n arguments from stack and puts them into arg */

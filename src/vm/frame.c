@@ -20,6 +20,7 @@ void
 
   /* If full */
   if (p==NULL){
+
     lock_release(&frame_lock);
     PANIC("Page table full");
   }

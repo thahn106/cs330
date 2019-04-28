@@ -2,8 +2,13 @@
 #define USERPROG_SYSCALL_H
 
 #include "threads/interrupt.h"
+#include "threads/thread.h"
+#include "vm/page.h"
+
 
 typedef int pid_t;
+
+#define USER_VADDR_BOTTOM ((void *) 0x08048000)
 
 void syscall_init (void);
 
@@ -31,5 +36,8 @@ int write (int, const void *, unsigned);
 void seek (int, unsigned);
 unsigned tell (int);
 void close (int);
+
+mapid_t mmap (int, const void *);
+void munmap (mapid_t);
 
 #endif /* userprog/syscall.h */

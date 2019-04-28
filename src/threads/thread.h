@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include "threads/synch.h"
 
+typedef int mapid_t;
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -137,6 +139,8 @@ struct thread
     /* Supplementary page table */
     struct list spt;
 
+    /* Mmap */
+    mapid_t mapping;
 
 
     /* Owned by thread.c. */
