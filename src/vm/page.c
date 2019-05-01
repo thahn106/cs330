@@ -1,9 +1,11 @@
 #include "vm/page.h"
 #include <list.h>
 #include <string.h>
+#include "filesys/file.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "vm/frame.h"
 
@@ -42,6 +44,7 @@ spt_install_page (struct list *spt, void *upage, void *kpage, bool writable, enu
   if (spte != NULL)
   {
     update_frame_spte(kpage, spte);
+    spte->kpage=kpage;
     return true;
   }
   return false;
@@ -86,7 +89,9 @@ void
 spt_munmap(mapid_t mapping)
 {
   struct spte *spte;
-  struct list *spt = &thread_current()->spt;
+  struct thread *curr = thread_current();
+  struct list *spt = &curr->spt;
+  struct file *file;
   struct list_elem *e;
   struct list_elem *temp;
   for (e = list_begin(spt); e != list_end(spt);)
@@ -98,8 +103,11 @@ spt_munmap(mapid_t mapping)
     {
       if (spte->status==SPTE_MMAP_LOADED)
       {
-        //WRITE TO File
-        //TODO
+        if(pagedir_is_dirty(curr->pagedir, spte->upage))
+        {
+          file = process_get_file(spte->fd);
+          file_write_at(file, spte->kpage, PGSIZE, spte->offset);
+        }
         list_remove(temp);
         free((void *)spte);
       }
@@ -148,6 +156,9 @@ load_mmap (struct spte* spte)
     frame_find(kpage)->spte=spte;
     spte->status=SPTE_MMAP_LOADED;
     install_page(spte->upage, kpage, spte->writable);
+    spte->kpage=kpage;
+    pagedir_set_dirty(thread_current()->pagedir, spte->upage, 0);
+
     return true;
   }
   //Free Frame TODO

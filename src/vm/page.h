@@ -19,6 +19,7 @@ struct spte
 {
   enum spte_status status;
   void *upage;
+  void *kpage;
   bool writable;
 
   int fd;
