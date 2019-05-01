@@ -372,9 +372,9 @@ mmap (int fd, const void *addr)
   for (offset = 0; offset < file_length(f); offset += PGSIZE)
   {
     spte = spt_add_entry(spt, addr+offset, true, SPTE_MMAP_NOT_LOADED);
-    spte->fd = fd;
     spte->offset = offset;
     spte->mapping = mapping;
+    spte->file = f;
   }
   lock_release(&files_lock);
   return mapping;

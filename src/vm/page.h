@@ -22,8 +22,8 @@ struct spte
   void *kpage;
   bool writable;
 
-  int fd;
   off_t offset;
+  struct file *file;
   mapid_t mapping;
   struct list_elem elem;
 };

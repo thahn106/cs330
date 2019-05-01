@@ -105,7 +105,7 @@ spt_munmap(mapid_t mapping)
       {
         if(pagedir_is_dirty(curr->pagedir, spte->upage))
         {
-          file = process_get_file(spte->fd);
+          file = spte->file;
           file_write_at(file, spte->kpage, PGSIZE, spte->offset);
         }
         list_remove(temp);
@@ -147,7 +147,7 @@ bool
 load_mmap (struct spte* spte)
 {
   void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
-  struct file *file = process_get_file(spte->fd);
+  struct file *file = spte->file;
   if (kpage==NULL)
     return false;
 
