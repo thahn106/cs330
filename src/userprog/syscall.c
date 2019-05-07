@@ -59,6 +59,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       pull_args(f, &arg[0], 1);
       check_string((const void *) arg[0], esp);
       // arg[0] = get_physical_addr((const void *) arg[0]);
+      check_ptr((void *) arg[0], esp);
       f->eax = exec((const char *) arg[0]);
       break;
     }
@@ -73,6 +74,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       pull_args(f, &arg[0], 2);
       check_string((const void *) arg[0], esp);
       // arg[0] = get_physical_addr((const void *) arg[0]);
+      check_ptr((void *) arg[0], esp);
       f->eax = create((const char *)arg[0], (unsigned) arg[1]);
       break;
     }
@@ -80,6 +82,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       pull_args(f, &arg[0], 1);
 	    // arg[0] = get_physical_addr((const void *) arg[0]);
+      check_ptr((void *) arg[0], esp);
 	    f->eax = remove((const char *) arg[0]);
 	    break;
     }
@@ -87,6 +90,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     {
       pull_args(f, &arg[0], 1);
       // arg[0] = get_physical_addr((const void *) arg[0]);
+      check_ptr((void *) arg[0], esp);
       f->eax = open((const char *) arg[0]);
       break;
     }
@@ -101,6 +105,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       pull_args(f, &arg[0], 3);
     	check_buffer((void *) arg[1], (unsigned) arg[2], esp);
     	// arg[1] = get_physical_addr((const void *) arg[1]);
+      check_ptr((void *) arg[1],esp);
     	f->eax = read(arg[0], (void *) arg[1], (unsigned) arg[2]);
     	break;
     }
@@ -109,6 +114,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       pull_args(f, &arg[0], 3);
 	    check_buffer((void *) arg[1], (unsigned) arg[2], esp);
 	    // arg[1] = get_physical_addr((const void *) arg[1]);
+      check_ptr((void *) arg[1],esp);
 	    f->eax = write(arg[0], (const void *) arg[1], (unsigned) arg[2]);
       break;
     }

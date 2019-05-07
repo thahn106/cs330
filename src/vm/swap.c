@@ -48,7 +48,7 @@ swap_in (struct spte *spte)
 {
   bool success = false;
   size_t index = spte->index;
-  struct frame *frame = frame_get_page(PAL_USER|PAL_ZERO);
+  struct frame *frame = frame_find(frame_get_page(PAL_USER|PAL_ZERO));
 
   /* Find free sector and swap out */
   lock_acquire(&swap_lock);
@@ -58,6 +58,8 @@ swap_in (struct spte *spte)
   bitmap_set(swap_table, index, false);
   update_frame_spte(frame,spte);
   install_page(spte->upage, frame->kpage, true);
+  pagedir_set_dirty(thread_current()->pagedir, spte->upage, true);
+  frame->spte = spte;
   spte->status = SPTE_MEMORY;
 
   success=true;
@@ -109,15 +111,18 @@ swap_in_elf (struct spte *spte)
 {
   bool success = false;
   size_t index = spte->index;
-  struct frame *frame = frame_get_page(PAL_USER|PAL_ZERO);
+  spte->using=true;
+  // printf("SWAPPING IN ELF %p.\n",spte->upage);
 
   /* Find free sector and swap out */
+  struct frame *frame = frame_find(frame_get_page(PAL_USER|PAL_ZERO));
   lock_acquire(&swap_lock);
-
   read_from_disk(frame, index);
   bitmap_set(swap_table, index, false);
   update_frame_spte(frame,spte);
   install_page(spte->upage, frame->kpage, true);
+  pagedir_set_dirty(thread_current()->pagedir, spte->upage, true);
+  frame->spte = spte;
   spte->status = SPTE_ELF_LOADED;
 
   success=true;
@@ -131,7 +136,7 @@ swap_out_elf (struct frame *frame)
 {
   bool success=false;
   size_t index;
-
+  // printf("SWAPPING OUT ELF %p.\n",frame->spte->upage);
   /* Find free sector and swap out */
   lock_acquire(&swap_lock);
   index = bitmap_scan(swap_table, 0, 1, false);
@@ -142,7 +147,7 @@ swap_out_elf (struct frame *frame)
 
   frame->spte->status = SPTE_ELF_SWAPPED;
   frame->spte->index=index;
-
+  frame->spte->using=false;
   bitmap_set(swap_table, index, true);
   pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
 

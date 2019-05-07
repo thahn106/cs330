@@ -158,43 +158,42 @@ page_fault (struct intr_frame *f)
      which fault_addr refers. */
 
   bool loaded = false;
-  printf("Pg fault at %p.\n", fault_addr);
+  // printf("Pg fault at %p.\n", fault_addr);
   if (is_user_vaddr(fault_addr) && not_present)
   {
     struct spte *spte = spt_get_page(&thread_current()->spt,fault_addr);
     /* Not loaded */
     if (spte!=NULL)
     {
+      spte->using = true;
       switch(spte->status)
       {
         case SPTE_SWAPPED:
-          printf("Swapping in.\n");
+          // printf("Swapping in.\n");
           loaded = swap_in(spte);
           break;
         case SPTE_ELF_NOT_LOADED:
-          printf("loading in.\n");
+          // printf("loading in.\n");
           loaded = load_elf(spte);
           break;
         case SPTE_ELF_SWAPPED:
-          printf("swapping elf in.\n");
+          // printf("swapping elf in.\n");
           loaded = swap_in_elf(spte);
           break;
         case SPTE_MMAP_NOT_LOADED:
-          printf("loading mmap in.\n");
+          // printf("loading mmap in.\n");
           loaded = load_mmap(spte);
           break;
         default:
-          printf("WRONG FORMAT\n");
+          // printf("WRONG FORMAT\n");
           break;
       }
+      spte->using = false;
     }
     /* Grow stack if fault_addr is within expected range of stack */
     else if (fault_addr > USER_VADDR_BOTTOM && fault_addr >= f->esp-32)
     {
       loaded = spt_grow(fault_addr);
-    }
-    else{
-      printf("SPTE IS NULL AND OUT OF BOUNDS\n");
     }
   }
   if (!loaded)

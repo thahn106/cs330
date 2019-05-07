@@ -35,6 +35,7 @@ spt_add_entry (struct list *spt, void *upage, bool writable, enum spte_status st
     spte->status=status;
     spte->upage=upage;
     spte->writable=writable;
+    spte->using=false;
     list_push_back(spt,&spte->elem);
     return spte;
   }
@@ -47,6 +48,7 @@ spt_install_page (struct list *spt, void *upage, void *kpage, bool writable, enu
   struct spte *spte = spt_add_entry(spt, upage, writable, status);
   if (spte != NULL)
   {
+    spte->using=true;
     update_frame_spte(kpage, spte);
     spte->kpage=kpage;
     return true;
@@ -139,7 +141,7 @@ spt_grow(void* vaddr)
 bool
 load_elf (struct spte* spte)
 {
-  void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
+  void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
   struct file *file = spte->file;
   if (kpage==NULL)
     return false;
@@ -150,15 +152,15 @@ load_elf (struct spte* spte)
     if (!file_read_at(file, kpage, spte->read_bytes, spte->offset) == spte->read_bytes)
       return false;
   }
-  update_frame_spte(kpage, spte);
-  spte->status=SPTE_ELF_LOADED;
   if(!install_page(spte->upage, kpage, spte->writable)){
-    printf("FAILED TO INSTALL PAGE\n");
+    // printf("FAILED TO INSTALL PAGE\n");
     return false;
   }
+  update_frame_spte(kpage, spte);
+  spte->status=SPTE_ELF_LOADED;
   spte->kpage=kpage;
   pagedir_set_dirty(thread_current()->pagedir, spte->upage, false);
-  printf("ELF LOADED at %p\n",spte->upage);
+  // printf("ELF LOADED at %p\n",spte->upage);
   return true;
 }
 
@@ -169,6 +171,7 @@ elf_unload(struct frame* frame)
   struct spte *spte = frame->spte;
   if (spte->status==SPTE_ELF_LOADED)
   {
+    // if(true)
     if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
       swap_out_elf(frame);
     else{
@@ -176,16 +179,15 @@ elf_unload(struct frame* frame)
       memset(frame->kpage, 0, PGSIZE);
       pagedir_clear_page(thread_current()->pagedir,spte->upage);
     }
-    printf("ELF UNLOADED at %p\n",spte->upage);
   }
   return true;
 }
 
 
 bool
-load_mmap (struct spte* spte)
+load_mmap (struct spte *spte)
 {
-  void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
+  void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
   struct file *file = spte->file;
   if (kpage==NULL)
     return false;

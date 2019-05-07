@@ -24,7 +24,14 @@ void
 
   /* If full */
   if (p==NULL){
-    f = list_entry(list_pop_front(&frame_list), struct frame, elem);
+    while(!success){
+      f = list_entry(list_pop_front(&frame_list), struct frame, elem);
+      if (!f->spte->using)
+        success = true;
+      else{
+        list_push_back(&frame_list, &f->elem);
+      }
+    }
     success = frame_evict(f);
   }
   else{
@@ -34,6 +41,7 @@ void
     success = true;
   }
   if (success){
+    p = f->kpage;
     f->owner = thread_current();
     list_push_back(&frame_list, &f->elem);
   }
@@ -99,19 +107,24 @@ update_frame_spte(void* kpage, struct spte* spte)
 bool
 frame_evict(struct frame *frame)
 {
+  // printf("EVICTING FRAME %p.\n", frame->spte->upage);
   bool success=false;
   switch(frame->spte->status)
   {
     case SPTE_MEMORY:
+      // printf("SWAP_OUT %p.\n", frame->spte->upage);
       success = swap_out(frame);
       break;
     case SPTE_ELF_LOADED:
+      // printf("SWAP_OUT_ELF %p.\n", frame->spte->upage);
       success = elf_unload(frame);
       break;
     case SPTE_MMAP_LOADED:
+      // printf("SWAP_OUT_MMAP %p.\n", frame->spte->upage);
       success = mmap_unload(frame->spte);
       break;
     default:
+      // printf("WEIRD STATUS %d.\n", frame->spte->status);
       break;
   }
   return success;

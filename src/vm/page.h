@@ -24,6 +24,8 @@ struct spte
   void *kpage;
   bool writable;
 
+  bool using;
+
   uint32_t read_bytes;
   uint32_t zero_bytes;
   /* Swap space */
@@ -34,7 +36,6 @@ struct spte
   struct file *file;
   /* MMAP only */
   mapid_t mapping;
-
 
   struct list_elem elem;
 };
