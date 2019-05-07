@@ -12,15 +12,16 @@
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 
 /* Helper functions */
 void pull_args(struct intr_frame *, int*, int);
-int get_physical_addr(const void *);
-void check_ptr(const void *);
-void check_buffer (void *, unsigned);
-void check_string (const void *);
+int get_physical_addr(const void *, void*);
+bool check_ptr(const void *, void*);
+void check_buffer (void *, unsigned, void*);
+void check_string (const void *, void*);
 
 void
 syscall_init (void)
@@ -36,8 +37,8 @@ syscall_handler (struct intr_frame *f UNUSED)
   int arg[3];
 
   /* Verifies stack pointer and reads system call from it */
-  check_ptr(f->esp);
-  int esp = get_physical_addr((const void*) f->esp);
+  void *esp = f->esp;
+  // int esp = get_physical_addr((const void*) f->esp);
 
   /* Cast pointer as an int pointer and deference to get system call */
   switch (* (int *) esp)
@@ -56,8 +57,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_EXEC:
     {
       pull_args(f, &arg[0], 1);
-      check_string((const void *) arg[0]);
-      arg[0] = get_physical_addr((const void *) arg[0]);
+      check_string((const void *) arg[0], esp);
+      // arg[0] = get_physical_addr((const void *) arg[0]);
       f->eax = exec((const char *) arg[0]);
       break;
     }
@@ -70,22 +71,22 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CREATE:
     {
       pull_args(f, &arg[0], 2);
-      check_string((const void *) arg[0]);
-      arg[0] = get_physical_addr((const void *) arg[0]);
+      check_string((const void *) arg[0], esp);
+      // arg[0] = get_physical_addr((const void *) arg[0]);
       f->eax = create((const char *)arg[0], (unsigned) arg[1]);
       break;
     }
     case SYS_REMOVE:
     {
       pull_args(f, &arg[0], 1);
-	    arg[0] = get_physical_addr((const void *) arg[0]);
+	    // arg[0] = get_physical_addr((const void *) arg[0]);
 	    f->eax = remove((const char *) arg[0]);
 	    break;
     }
     case SYS_OPEN:
     {
       pull_args(f, &arg[0], 1);
-      arg[0] = get_physical_addr((const void *) arg[0]);
+      // arg[0] = get_physical_addr((const void *) arg[0]);
       f->eax = open((const char *) arg[0]);
       break;
     }
@@ -98,16 +99,16 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_READ:
     {
       pull_args(f, &arg[0], 3);
-    	check_buffer((void *) arg[1], (unsigned) arg[2]);
-    	arg[1] = get_physical_addr((const void *) arg[1]);
+    	check_buffer((void *) arg[1], (unsigned) arg[2], esp);
+    	// arg[1] = get_physical_addr((const void *) arg[1]);
     	f->eax = read(arg[0], (void *) arg[1], (unsigned) arg[2]);
     	break;
     }
     case SYS_WRITE:
     {
       pull_args(f, &arg[0], 3);
-	    check_buffer((void *) arg[1], (unsigned) arg[2]);
-	    arg[1] = get_physical_addr((const void *) arg[1]);
+	    check_buffer((void *) arg[1], (unsigned) arg[2], esp);
+	    // arg[1] = get_physical_addr((const void *) arg[1]);
 	    f->eax = write(arg[0], (const void *) arg[1], (unsigned) arg[2]);
       break;
     }
@@ -341,8 +342,8 @@ mmap (int fd, const void *addr)
 {
   off_t offset;
   struct spte* spte;
-  struct thread *curr= thread_current();
-  struct list *spt=&curr->spt;
+  struct thread *curr = thread_current();
+  struct list *spt = &curr->spt;
   mapid_t mapping;;
   /* Fail conditions */
   if (filesize(fd)==0)
@@ -374,7 +375,7 @@ mmap (int fd, const void *addr)
     spte = spt_add_entry(spt, addr+offset, true, SPTE_MMAP_NOT_LOADED);
     spte->offset = offset;
     spte->mapping = mapping;
-    spte->file = f;
+    spte->file = file_reopen(f);
   }
   lock_release(&files_lock);
   return mapping;
@@ -397,7 +398,7 @@ pull_args (struct intr_frame *f, int *arg, int n)
   for (i = 0; i < n; i++)
   {
     ptr++;
-    check_ptr((const void *) ptr);
+    check_ptr((const void *) ptr, f->esp);
     arg[i] = *ptr;
   }
 }
@@ -405,9 +406,9 @@ pull_args (struct intr_frame *f, int *arg, int n)
 /* Takes virtual address and uses process page directory
 to get physical address  */
 int
-get_physical_addr(const void *vaddr)
+get_physical_addr(const void *vaddr, void* esp)
 {
-  check_ptr(vaddr);
+  check_ptr(vaddr,esp);
   void *ptr = pagedir_get_page(thread_current()->pagedir, vaddr);
   if (!ptr)
     exit(-1);
@@ -416,22 +417,39 @@ get_physical_addr(const void *vaddr)
 }
 
 /* Checks if pointer is valid to user virtual memory */
-void
-check_ptr (const void *vaddr)
+bool
+check_ptr (const void *vaddr, void * esp)
 {
   if (!is_user_vaddr(vaddr) || vaddr < USER_VADDR_BOTTOM)
       exit(-1);
+
+  bool success=false;
+  void *p = pagedir_get_page(thread_current()->pagedir, vaddr);
+  if (p)
+  {
+    success = true;
+  }
+  else
+  {
+    if (vaddr > USER_VADDR_BOTTOM && vaddr >= esp-32)
+    {
+      success = spt_grow(vaddr);
+    }
+  }
+  if (!success)
+    exit(-1);
+  return true;
 }
 
 /* Checks if buffer is valid for the given size */
 void
-check_buffer (void *buffer, unsigned size)
+check_buffer (void *buffer, unsigned size, void *esp)
 {
   int i;
   char* buf_ptr = (char *) buffer;
   for (i = 0; i < size; i++)
     {
-      check_ptr((const void*) buf_ptr);
+      check_ptr((const void*) buf_ptr, esp);
       buf_ptr++;
     }
 }
@@ -439,12 +457,14 @@ check_buffer (void *buffer, unsigned size)
 /* Checks if the whole string is in valid memory,
     Typically used to check file name strings  */
 void
-check_string (const void *str)
+check_string (const void *str, void* esp)
 {
   /* If any character is not in valid memory,
       get_physical_addr throws error and exits process. */
-  while (* (char *) get_physical_addr(str) != 0)
+  check_ptr(str,esp);
+  while (* (char *) str != 0)
     {
       str = (char *) str + 1;
+      check_ptr(str,esp);
     }
 }

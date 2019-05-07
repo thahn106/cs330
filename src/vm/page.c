@@ -7,7 +7,11 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
+
+// void mmap_unload(struct spte *);
 
 struct spte *
 spt_get_page (struct list *spt, void *upage) {
@@ -16,7 +20,7 @@ spt_get_page (struct list *spt, void *upage) {
   for (e = list_begin(spt); e != list_end(spt); e = list_next(e))
   {
       spte =  list_entry(e, struct spte, elem);
-      if (spte->upage == upage)
+      if (spte->upage == pg_round_down(upage))
         return spte;
   }
   return NULL;
@@ -61,6 +65,7 @@ spt_uninstall_page(struct list *spt, void *upage)
     e = list_next(e);
     if (spte->upage == upage)
     {
+      mmap_unload(spte);
       list_remove(e);
       free(spte);
     }
@@ -80,6 +85,7 @@ spt_uninstall_all(struct list *spt)
     spte =  list_entry(e, struct spte, elem);
     temp = e;
     e = list_next(e);
+    mmap_unload(spte);
     list_remove(temp);
     free((void *)spte);
   }
@@ -89,9 +95,7 @@ void
 spt_munmap(mapid_t mapping)
 {
   struct spte *spte;
-  struct thread *curr = thread_current();
-  struct list *spt = &curr->spt;
-  struct file *file;
+  struct list *spt = &thread_current()->spt;
   struct list_elem *e;
   struct list_elem *temp;
   for (e = list_begin(spt); e != list_end(spt);)
@@ -99,23 +103,12 @@ spt_munmap(mapid_t mapping)
     spte =  list_entry(e, struct spte, elem);
     temp = e;
     e = list_next(e);
-    if(spte->mapping==mapping)
+    if(spte->mapping==mapping&&(spte->status==SPTE_MMAP_LOADED||spte->status==SPTE_MMAP_NOT_LOADED))
     {
-      if (spte->status==SPTE_MMAP_LOADED)
-      {
-        if(pagedir_is_dirty(curr->pagedir, spte->upage))
-        {
-          file = spte->file;
-          file_write_at(file, spte->kpage, PGSIZE, spte->offset);
-        }
-        list_remove(temp);
-        free((void *)spte);
-      }
-      if(spte->status==SPTE_MMAP_NOT_LOADED)
-      {
-        list_remove(temp);
-        free((void *)spte);
-      }
+      mmap_unload(spte);
+      file_close(spte->file);
+      list_remove(temp);
+      free((void *)spte);
     }
   }
 }
@@ -144,6 +137,52 @@ spt_grow(void* vaddr)
 }
 
 bool
+load_elf (struct spte* spte)
+{
+  void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
+  struct file *file = spte->file;
+  if (kpage==NULL)
+    return false;
+
+  memset(kpage, 0, PGSIZE);
+  if (spte->read_bytes>0)
+  {
+    if (!file_read_at(file, kpage, spte->read_bytes, spte->offset) == spte->read_bytes)
+      return false;
+  }
+  update_frame_spte(kpage, spte);
+  spte->status=SPTE_ELF_LOADED;
+  if(!install_page(spte->upage, kpage, spte->writable)){
+    printf("FAILED TO INSTALL PAGE\n");
+    return false;
+  }
+  spte->kpage=kpage;
+  pagedir_set_dirty(thread_current()->pagedir, spte->upage, false);
+  printf("ELF LOADED at %p\n",spte->upage);
+  return true;
+}
+
+bool
+elf_unload(struct frame* frame)
+{
+  struct thread *curr = thread_current();
+  struct spte *spte = frame->spte;
+  if (spte->status==SPTE_ELF_LOADED)
+  {
+    if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
+      swap_out_elf(frame);
+    else{
+      spte->status=SPTE_ELF_NOT_LOADED;
+      memset(frame->kpage, 0, PGSIZE);
+      pagedir_clear_page(thread_current()->pagedir,spte->upage);
+    }
+    printf("ELF UNLOADED at %p\n",spte->upage);
+  }
+  return true;
+}
+
+
+bool
 load_mmap (struct spte* spte)
 {
   void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
@@ -153,14 +192,26 @@ load_mmap (struct spte* spte)
 
   memset(kpage, 0, PGSIZE);
   if (file_read_at(file, kpage, PGSIZE, spte->offset)!=0){
-    frame_find(kpage)->spte=spte;
+    update_frame_spte(kpage, spte);
     spte->status=SPTE_MMAP_LOADED;
     install_page(spte->upage, kpage, spte->writable);
     spte->kpage=kpage;
-    pagedir_set_dirty(thread_current()->pagedir, spte->upage, 0);
+    pagedir_set_dirty(thread_current()->pagedir, spte->upage, false);
 
     return true;
   }
-  //Free Frame TODO
+  // printf("load_mmap failed. offset: %d.\n", spte->offset);
   return false;
+}
+
+bool
+mmap_unload(struct spte *spte)
+{
+  struct thread *curr = thread_current();
+  if (spte->status==SPTE_MMAP_LOADED)
+  {
+    if(pagedir_is_dirty(curr->pagedir, spte->upage))
+      file_write_at(spte->file, spte->kpage, PGSIZE, spte->offset);
+  }
+  return true;
 }

@@ -161,12 +161,15 @@ process_exit (void)
   }
 
   process_close_file(-1); // Closes all files associated with the file
+
+
   if (curr->execfile)
     file_close(curr->execfile);
 
   lock_release(&files_lock);
 
   spt_uninstall_all(&curr->spt);
+
 
   if (pd != NULL)
     {
@@ -472,30 +475,39 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      // uint8_t *kpage = palloc_get_page (PAL_USER);
-      uint8_t *kpage = frame_get_page (PAL_USER);
-      if (kpage == NULL)
+      // // uint8_t *kpage = palloc_get_page (PAL_USER);
+      // uint8_t *kpage = frame_get_page (PAL_USER);
+      // if (kpage == NULL)
+      //   return false;
+      //
+      // /* Load this page. */
+      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      //   {
+      //     // palloc_free_page (kpage);
+      //     frame_free_page(kpage);
+      //     return false;
+      //   }
+      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      //
+      // /* Add the page to the process's address space. */
+      // if (!install_page (upage, kpage, writable))
+      // {
+      //   // palloc_free_page (kpage);
+      //   frame_free_page (kpage);
+      //   return false;
+      // }
+      struct spte *spte = spt_add_entry(&thread_current()->spt, upage, writable, SPTE_ELF_NOT_LOADED);
+      if (!spte)
         return false;
+      spte->file = file_reopen(file);
+      spte->offset = ofs;
+      spte->read_bytes=page_read_bytes;
+      spte->zero_bytes=page_zero_bytes;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          // palloc_free_page (kpage);
-          frame_free_page(kpage);
-          return false;
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable))
-      {
-        // palloc_free_page (kpage);
-        frame_free_page (kpage);
-        return false;
-      }
-      spt_install_page(&thread_current()->spt, upage, kpage, writable, SPTE_ELF_LOADED);
-
+      printf("Page installed at %p.\n", upage);
       /* Advance. */
+      if (page_read_bytes)
+        ofs += PGSIZE;
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;

@@ -36,6 +36,7 @@
 #endif
 
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Amount of physical memory, in 4 kB pages. */
 size_t ram_pages;
@@ -92,6 +93,7 @@ main (void)
 
   frame_init();
 
+
   /* Segmentation. */
 #ifdef USERPROG
   tss_init ();
@@ -118,6 +120,8 @@ main (void)
   disk_init ();
   filesys_init (format_filesys);
 #endif
+
+  swap_init();
 
   printf ("Boot complete.\n");
 
