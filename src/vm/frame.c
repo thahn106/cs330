@@ -10,7 +10,7 @@ void
 frame_init(void)
 {
   list_init(&frame_list);
-  lock_init(&frame_lock);
+  lock_init(&frame_list_lock);
 }
 
 void
@@ -19,7 +19,7 @@ void
   void *p = NULL;
   bool success = false;
   struct frame *f;
-  lock_acquire(&frame_lock);
+  lock_acquire(&frame_list_lock);
   p = palloc_get_page(flag);
 
   /* If full */
@@ -27,17 +27,23 @@ void
     while(!success){
       f = list_entry(list_pop_front(&frame_list), struct frame, elem);
       if (!f->spte->using)
-        success = true;
+      {
+        lock_acquire(&f->lock);
+        success = frame_evict(f);
+        if (!success)
+          lock_release(&f->lock);
+      }
       else{
         list_push_back(&frame_list, &f->elem);
       }
     }
-    success = frame_evict(f);
   }
   else{
     /* Make new frame */
     f = (struct frame *) malloc(sizeof(struct frame));
     f->kpage = p;
+    lock_init(&f->lock);
+    lock_acquire(&f->lock);
     success = true;
   }
   if (success){
@@ -48,7 +54,8 @@ void
   else{
     PANIC("FAILED TO GET FRAME\n");
   }
-  lock_release(&frame_lock);
+  lock_release(&f->lock);
+  lock_release(&frame_list_lock);
   return p;
 }
 
@@ -57,7 +64,7 @@ frame_free_page(void *kpage)
 {
   struct frame *f;
 
-  lock_acquire(&frame_lock);
+  lock_acquire(&frame_list_lock);
 
   struct list_elem *e;
   for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
@@ -68,31 +75,31 @@ frame_free_page(void *kpage)
       list_remove(e);
       palloc_free_page(kpage);
       free(f);
-      lock_release(&frame_lock);
+      lock_release(&frame_list_lock);
       return;
     }
   }
   /* Invalid kpage pointer */
-  lock_release(&frame_lock);
+  lock_release(&frame_list_lock);
 }
 
 struct frame*
 frame_find(void* kpage)
 {
   struct frame *f;
-  lock_acquire(&frame_lock);
+  lock_acquire(&frame_list_lock);
   struct list_elem *e;
   for (e = list_begin(&frame_list); e != list_end(&frame_list); e = list_next(e))
   {
     f = list_entry(e, struct frame, elem);
     if (f->kpage==kpage)
     {
-      lock_release(&frame_lock);
+      lock_release(&frame_list_lock);
       return f;
     }
   }
   /* Invalid kpage pointer */
-  lock_release(&frame_lock);
+  lock_release(&frame_list_lock);
   return NULL;
 }
 
@@ -107,24 +114,30 @@ update_frame_spte(void* kpage, struct spte* spte)
 bool
 frame_evict(struct frame *frame)
 {
-  // printf("EVICTING FRAME %p.\n", frame->spte->upage);
+  struct spte *spte= frame->spte;
+  // printf("EVICTING FRAME %p.\n", spte->upage);
   bool success=false;
-  switch(frame->spte->status)
+  switch(spte->status)
   {
     case SPTE_MEMORY:
-      // printf("SWAP_OUT %p.\n", frame->spte->upage);
+      // printf("SWAP_OUT %p.\n", spte->upage);
       success = swap_out(frame);
       break;
     case SPTE_ELF_LOADED:
-      // printf("SWAP_OUT_ELF %p.\n", frame->spte->upage);
+      // printf("SWAP_OUT_ELF %p.\n", spte->upage);
       success = elf_unload(frame);
+      if (success){
+        int t= spte->status;
+        // printf("SWAP_OUT_ELF %p successful at frame_evict with status %d.\n", spte->upage, t);
+      }
+      // else printf("SWAP_OUT_ELF %p unsuccessful.\n", spte->upage);
       break;
     case SPTE_MMAP_LOADED:
-      // printf("SWAP_OUT_MMAP %p.\n", frame->spte->upage);
-      success = mmap_unload(frame->spte);
+      // printf("SWAP_OUT_MMAP %p.\n", spte->upage);
+      success = mmap_unload(spte);
       break;
     default:
-      // printf("WEIRD STATUS %d.\n", frame->spte->status);
+      // printf("WEIRD STATUS %d.\n", spte->status);
       break;
   }
   return success;

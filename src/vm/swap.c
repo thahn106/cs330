@@ -44,11 +44,11 @@ swap_init (void)
  * of the disk into the frame.
  */
 bool
-swap_in (struct spte *spte)
+swap_in (struct spte *spte, void *kpage)
 {
   bool success = false;
   size_t index = spte->index;
-  struct frame *frame = frame_find(frame_get_page(PAL_USER|PAL_ZERO));
+  struct frame *frame = frame_find(kpage);
 
   /* Find free sector and swap out */
   lock_acquire(&swap_lock);
@@ -98,6 +98,7 @@ swap_out (struct frame *frame)
 
   frame->spte->status = SPTE_SWAPPED;
   bitmap_set(swap_table, index, true);
+  frame->spte->index = index;
   pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
 
   success=true;
@@ -107,15 +108,16 @@ swap_out (struct frame *frame)
 }
 
 bool
-swap_in_elf (struct spte *spte)
+swap_in_elf (struct spte *spte, void *kpage)
 {
   bool success = false;
   size_t index = spte->index;
   spte->using=true;
-  // printf("SWAPPING IN ELF %p.\n",spte->upage);
+  // printf("SWAPPING IN ELF %p.\n", spte->upage);
 
   /* Find free sector and swap out */
-  struct frame *frame = frame_find(frame_get_page(PAL_USER|PAL_ZERO));
+  struct frame *frame = frame_find(kpage);
+  // lock_acquire(&frame->lock);
   lock_acquire(&swap_lock);
   read_from_disk(frame, index);
   bitmap_set(swap_table, index, false);
@@ -127,6 +129,7 @@ swap_in_elf (struct spte *spte)
 
   success=true;
   lock_release(&swap_lock);
+  // lock_release(&frame->lock);
 
   return success;
 }
@@ -137,21 +140,23 @@ swap_out_elf (struct frame *frame)
   bool success=false;
   size_t index;
   // printf("SWAPPING OUT ELF %p.\n",frame->spte->upage);
+  // lock_acquire(&frame->lock);
   /* Find free sector and swap out */
   lock_acquire(&swap_lock);
   index = bitmap_scan(swap_table, 0, 1, false);
   if (index == BITMAP_ERROR)
     return success;
 
-  write_to_disk(frame, index);
-
   frame->spte->status = SPTE_ELF_SWAPPED;
-  frame->spte->index=index;
-  frame->spte->using=false;
+  write_to_disk(frame, index);
+  // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
+  frame->spte->index = index;
+  frame->spte->using = false;
   bitmap_set(swap_table, index, true);
-  pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
+  // pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
 
   success=true;
+  // lock_release(&frame->lock);
   lock_release(&swap_lock);
 
   return success;

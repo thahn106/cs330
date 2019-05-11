@@ -12,7 +12,9 @@
 #include "threads/malloc.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -20,7 +22,7 @@ static void syscall_handler (struct intr_frame *);
 void pull_args(struct intr_frame *, int*, int);
 int get_physical_addr(const void *, void*);
 bool check_ptr(const void *, void*);
-void check_buffer (void *, unsigned, void*);
+void check_buffer (void *, unsigned, void*,bool);
 void check_string (const void *, void*);
 
 void
@@ -39,7 +41,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   /* Verifies stack pointer and reads system call from it */
   void *esp = f->esp;
   // int esp = get_physical_addr((const void*) f->esp);
-
+  check_ptr(esp,esp);
   /* Cast pointer as an int pointer and deference to get system call */
   switch (* (int *) esp)
   {
@@ -103,7 +105,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_READ:
     {
       pull_args(f, &arg[0], 3);
-    	check_buffer((void *) arg[1], (unsigned) arg[2], esp);
+    	check_buffer((void *) arg[1], (unsigned) arg[2], esp, true);
     	// arg[1] = get_physical_addr((const void *) arg[1]);
       check_ptr((void *) arg[1],esp);
     	f->eax = read(arg[0], (void *) arg[1], (unsigned) arg[2]);
@@ -112,7 +114,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_WRITE:
     {
       pull_args(f, &arg[0], 3);
-	    check_buffer((void *) arg[1], (unsigned) arg[2], esp);
+	    check_buffer((void *) arg[1], (unsigned) arg[2], esp, false);
 	    // arg[1] = get_physical_addr((const void *) arg[1]);
       check_ptr((void *) arg[1],esp);
 	    f->eax = write(arg[0], (const void *) arg[1], (unsigned) arg[2]);
@@ -426,36 +428,85 @@ get_physical_addr(const void *vaddr, void* esp)
 bool
 check_ptr (const void *vaddr, void * esp)
 {
+  // printf("Checking ptr %p against esp %p.\n", vaddr, esp);
   if (!is_user_vaddr(vaddr) || vaddr < USER_VADDR_BOTTOM)
       exit(-1);
 
   bool success=false;
-  void *p = pagedir_get_page(thread_current()->pagedir, vaddr);
-  if (p)
+  void *kpage;
+  struct frame *frame;
+  struct spte *spte = spt_get_page(&thread_current()->spt, pg_round_down(vaddr));
+  if (spte!=NULL)
   {
-    success = true;
+    // printf("SPTE EXISTED\n");
+    spte->using = true;
+    switch(spte->status)
+    {
+      case SPTE_SWAPPED:
+        kpage = frame_get_page(PAL_USER|PAL_ZERO);
+        frame=frame_find(kpage);
+        lock_acquire(&frame->lock);
+        success = swap_in(spte,kpage);
+        lock_release(&frame->lock);
+        break;
+      case SPTE_ELF_NOT_LOADED:
+        kpage = frame_get_page(PAL_USER|PAL_ZERO);
+        frame=frame_find(kpage);
+        lock_acquire(&frame->lock);
+        success = load_elf(spte,kpage);
+        lock_release(&frame->lock);
+        break;
+      case SPTE_ELF_SWAPPED:
+        kpage = frame_get_page(PAL_USER|PAL_ZERO);
+        frame=frame_find(kpage);
+        lock_acquire(&frame->lock);
+        success = swap_in_elf(spte,kpage);
+        lock_release(&frame->lock);
+        break;
+      case SPTE_MMAP_NOT_LOADED:
+        kpage = frame_get_page(PAL_USER|PAL_ZERO);
+        frame=frame_find(kpage);
+        lock_acquire(&frame->lock);
+        success = load_mmap(spte,kpage);
+        lock_release(&frame->lock);
+        break;
+      default:
+        success=true;
+        break;
+    }
+    spte->using = false;
   }
   else
   {
+    // printf("nopage\n");
     if (vaddr > USER_VADDR_BOTTOM && vaddr >= esp-32)
     {
+      // printf("GROWING\n");
       success = spt_grow(vaddr);
     }
   }
   if (!success)
     exit(-1);
+  // printf("Checked ptr %p against esp %p.\n", vaddr, esp);
   return true;
 }
 
 /* Checks if buffer is valid for the given size */
 void
-check_buffer (void *buffer, unsigned size, void *esp)
+check_buffer (void *buffer, unsigned size, void *esp, bool check_write)
 {
   int i;
   char* buf_ptr = (char *) buffer;
+  struct spte *spte;
   for (i = 0; i < size; i++)
     {
       check_ptr((const void*) buf_ptr, esp);
+      if (check_write)
+      {
+        spte = spt_get_page(&thread_current()->spt, pg_round_down(buf_ptr));
+        if (!spte->writable)
+          exit(-1);
+      }
       buf_ptr++;
     }
 }

@@ -29,6 +29,9 @@ spt_get_page (struct list *spt, void *upage) {
 struct spte *
 spt_add_entry (struct list *spt, void *upage, bool writable, enum spte_status status)
 {
+  if (upage != pg_round_down(upage))
+    return NULL;
+
   if (spt_get_page(spt,upage)==NULL)
   {
     struct spte *spte = (struct spte *) malloc(sizeof(struct spte));
@@ -118,6 +121,10 @@ spt_munmap(mapid_t mapping)
 bool
 spt_grow(void* vaddr)
 {
+  if ( (size_t) (PHYS_BASE - pg_round_down(vaddr)) > (1<<23))
+    {
+      return false;
+    }
   void *kpage = frame_get_page(PAL_USER|PAL_ZERO);
   bool success = false;
   void *vpage = pg_round_down(vaddr);
@@ -139,9 +146,9 @@ spt_grow(void* vaddr)
 }
 
 bool
-load_elf (struct spte* spte)
+load_elf (struct spte* spte, void *kpage)
 {
-  void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
+  // void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
   struct file *file = spte->file;
   if (kpage==NULL)
     return false;
@@ -169,25 +176,33 @@ elf_unload(struct frame* frame)
 {
   struct thread *curr = thread_current();
   struct spte *spte = frame->spte;
-  if (spte->status==SPTE_ELF_LOADED)
+  // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
+  if (spte->status == SPTE_ELF_LOADED)
   {
-    // if(true)
     if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
+    {
+      // printf("SWAPPING OUT ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
       swap_out_elf(frame);
-    else{
-      spte->status=SPTE_ELF_NOT_LOADED;
-      memset(frame->kpage, 0, PGSIZE);
       pagedir_clear_page(thread_current()->pagedir,spte->upage);
+      // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
     }
+    else{
+      // printf("UNLOADING ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
+      spte->status=SPTE_ELF_NOT_LOADED;
+      // memset(frame->kpage, 0, PGSIZE);
+      pagedir_clear_page(thread_current()->pagedir,spte->upage);
+      // printf("ELF %p status %d.\n",spte->upage, spte->status);
+    }
+    return true;
   }
-  return true;
+  return false;
 }
 
 
 bool
-load_mmap (struct spte *spte)
+load_mmap (struct spte *spte, void *kpage)
 {
-  void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
+  // void* kpage =frame_get_page(PAL_USER|PAL_ZERO);
   struct file *file = spte->file;
   if (kpage==NULL)
     return false;

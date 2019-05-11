@@ -503,7 +503,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       spte->offset = ofs;
       spte->read_bytes=page_read_bytes;
       spte->zero_bytes=page_zero_bytes;
-      
+
       /* Advance. */
       if (page_read_bytes)
         ofs += PGSIZE;

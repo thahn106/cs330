@@ -49,9 +49,9 @@ void spt_munmap(mapid_t);
 
 bool spt_grow(void*);
 
-bool load_elf(struct spte*);
+bool load_elf(struct spte*, void*);
 bool unload_elf(struct frame*);
 
-bool load_mmap(struct spte*);
+bool load_mmap(struct spte*, void*);
 bool mmap_unload(struct spte*);
 #endif /* vm/page.h */

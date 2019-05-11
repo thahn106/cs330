@@ -159,35 +159,41 @@ page_fault (struct intr_frame *f)
 
   bool loaded = false;
   // printf("Pg fault at %p.\n", fault_addr);
-  if (is_user_vaddr(fault_addr) && not_present)
+  if (is_user_vaddr(fault_addr) && not_present && fault_addr > USER_VADDR_BOTTOM)
   {
     struct spte *spte = spt_get_page(&thread_current()->spt,fault_addr);
+    // printf("Pg %p with status %d.\n", spte->upage, spte->status);
     /* Not loaded */
     if (spte!=NULL)
     {
       spte->using = true;
+      void* kpage = frame_get_page(PAL_USER|PAL_ZERO);
+      struct frame *frame=frame_find(kpage);
+      lock_acquire(&frame->lock);
       switch(spte->status)
       {
         case SPTE_SWAPPED:
           // printf("Swapping in.\n");
-          loaded = swap_in(spte);
+          loaded = swap_in(spte,kpage);
           break;
         case SPTE_ELF_NOT_LOADED:
           // printf("loading in.\n");
-          loaded = load_elf(spte);
+          loaded = load_elf(spte,kpage);
           break;
         case SPTE_ELF_SWAPPED:
           // printf("swapping elf in.\n");
-          loaded = swap_in_elf(spte);
+          loaded = swap_in_elf(spte,kpage);
           break;
         case SPTE_MMAP_NOT_LOADED:
           // printf("loading mmap in.\n");
-          loaded = load_mmap(spte);
+          loaded = load_mmap(spte,kpage);
           break;
         default:
-          // printf("WRONG FORMAT\n");
+          // loaded=true;
+          // printf("WRONG FORMAT with status: %d.\n",spte->status);
           break;
       }
+      lock_release(&frame->lock);
       spte->using = false;
     }
     /* Grow stack if fault_addr is within expected range of stack */

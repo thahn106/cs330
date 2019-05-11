@@ -2,6 +2,7 @@
 #define VM_FRAME_H
 
 #include <list.h>
+#include "threads/synch.h"
 #include "threads/palloc.h"
 
 struct frame
@@ -9,11 +10,12 @@ struct frame
   void *kpage;
   struct spte *spte;
   struct thread *owner;
+  struct lock lock;
   struct list_elem elem;
 };
 
 static struct list frame_list;
-static struct lock frame_lock;
+static struct lock frame_list_lock;
 
 
 void frame_init(void);
