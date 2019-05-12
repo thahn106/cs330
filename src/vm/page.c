@@ -1,5 +1,6 @@
 #include "vm/page.h"
 #include <list.h>
+#include <hash.h>
 #include <string.h>
 #include "filesys/file.h"
 #include "threads/malloc.h"
@@ -13,21 +14,67 @@
 
 // void mmap_unload(struct spte *);
 
+
+static unsigned page_hash_func (const struct hash_elem *e, void *aux UNUSED)
+{
+  struct spte *spte = hash_entry(e, struct spte, elem);
+  return hash_int((int) spte->upage);
+}
+
+static bool page_less_func (const struct hash_elem *a,
+			    const struct hash_elem *b,
+			    void *aux UNUSED)
+{
+  struct spte *sa = hash_entry(a, struct spte, elem);
+  struct spte *sb = hash_entry(b, struct spte, elem);
+  if (sa->upage < sb->upage)
+    {
+      return true;
+    }
+  return false;
+}
+
+static void page_action_func (struct hash_elem *e, void *aux UNUSED)
+{
+  struct spte *spte = hash_entry(e, struct spte, elem);
+  mmap_unload(spte);
+  pagedir_clear_page(thread_current()->pagedir, spte->upage);
+  frame_free_page(spte->kpage);
+  free(spte);
+}
+
+void
+spt_init(struct hash *spt){
+  hash_init(spt, page_hash_func, page_less_func, NULL);
+}
+
+
+// struct spte *
+// spt_get_page (struct list *spt, void *upage) {
+//   struct spte *spte;
+//   struct list_elem *e;
+//   for (e = list_begin(spt); e != list_end(spt); e = list_next(e))
+//   {
+//       spte =  list_entry(e, struct spte, elem);
+//       if (spte->upage == pg_round_down(upage))
+//         return spte;
+//   }
+//   return NULL;
+// }
 struct spte *
-spt_get_page (struct list *spt, void *upage) {
-  struct spte *spte;
-  struct list_elem *e;
-  for (e = list_begin(spt); e != list_end(spt); e = list_next(e))
+spt_get_page (struct hash *spt, void *upage) {
+  struct spte spte;
+  spte.upage = pg_round_down(upage);
+  struct hash_elem *e = hash_find(spt, &spte.elem);
+  if (!e)
   {
-      spte =  list_entry(e, struct spte, elem);
-      if (spte->upage == pg_round_down(upage))
-        return spte;
+    return NULL;
   }
-  return NULL;
+  return hash_entry (e, struct spte, elem);
 }
 
 struct spte *
-spt_add_entry (struct list *spt, void *upage, bool writable, enum spte_status status)
+spt_add_entry (struct hash *spt, void *upage, bool writable, enum spte_status status)
 {
   if (upage != pg_round_down(upage))
     return NULL;
@@ -39,14 +86,14 @@ spt_add_entry (struct list *spt, void *upage, bool writable, enum spte_status st
     spte->upage=upage;
     spte->writable=writable;
     spte->using=false;
-    list_push_back(spt,&spte->elem);
+    hash_insert(spt,&spte->elem);
     return spte;
   }
   return NULL;
 }
 
 bool
-spt_install_page (struct list *spt, void *upage, void *kpage, bool writable, enum spte_status status)
+spt_install_page (struct hash *spt, void *upage, void *kpage, bool writable, enum spte_status status)
 {
   struct spte *spte = spt_add_entry(spt, upage, writable, status);
   if (spte != NULL)
@@ -60,59 +107,43 @@ spt_install_page (struct list *spt, void *upage, void *kpage, bool writable, enu
 }
 
 void
-spt_uninstall_page(struct list *spt, void *upage)
+spt_uninstall_page(struct hash *spt, void *upage)
 {
-  struct spte *spte;
-  struct list_elem *e;
-  for (e = list_begin(spt); e != list_end(spt);)
+  struct spte *spte = spt_get_page(spt, upage);
+  struct hash_elem *e = &spte->elem;
+  if (spte)
   {
-    spte =  list_entry(e, struct spte, elem);
-    e = list_next(e);
-    if (spte->upage == upage)
-    {
-      mmap_unload(spte);
-      list_remove(e);
-      free(spte);
-    }
+    mmap_unload(spte);
+    hash_delete(spt,e);
+    free(spte);
   }
 }
 
 void
-spt_uninstall_all(struct list *spt)
+spt_uninstall_all(struct hash *spt)
 {
-  struct spte *spte;
-  struct list_elem *e;
-  struct list_elem *temp;
-  if (list_empty(spt))
-    return;
-  for (e = list_begin(spt); e != list_end(spt);)
-  {
-    spte =  list_entry(e, struct spte, elem);
-    temp = e;
-    e = list_next(e);
-    mmap_unload(spte);
-    list_remove(temp);
-    free((void *)spte);
-  }
+  hash_destroy (spt, page_action_func);
 }
 
 void
 spt_munmap(mapid_t mapping)
 {
   struct spte *spte;
-  struct list *spt = &thread_current()->spt;
+  struct list *mlist = &thread_current()->mmap_list;
+  struct hash *spt = &thread_current()->spt;
   struct list_elem *e;
   struct list_elem *temp;
-  for (e = list_begin(spt); e != list_end(spt);)
+  for (e = list_begin(mlist); e != list_end(mlist);)
   {
-    spte =  list_entry(e, struct spte, elem);
+    spte =  list_entry(e, struct spte, mmap_elem);
     temp = e;
     e = list_next(e);
-    if(spte->mapping==mapping&&(spte->status==SPTE_MMAP_LOADED||spte->status==SPTE_MMAP_NOT_LOADED))
+    if(spte->mapping==mapping && (spte->status==SPTE_MMAP_LOADED||spte->status==SPTE_MMAP_NOT_LOADED))
     {
       mmap_unload(spte);
       file_close(spte->file);
       list_remove(temp);
+      hash_delete(spt, &spte->elem);
       free((void *)spte);
     }
   }
@@ -164,8 +195,8 @@ load_elf (struct spte* spte, void *kpage)
     return false;
   }
   update_frame_spte(kpage, spte);
-  spte->status=SPTE_ELF_LOADED;
-  spte->kpage=kpage;
+  spte->status = SPTE_ELF_LOADED;
+  spte->kpage = kpage;
   pagedir_set_dirty(thread_current()->pagedir, spte->upage, false);
   // printf("ELF LOADED at %p\n",spte->upage);
   return true;
@@ -176,26 +207,24 @@ elf_unload(struct frame* frame)
 {
   struct thread *curr = thread_current();
   struct spte *spte = frame->spte;
-  // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
-  if (spte->status == SPTE_ELF_LOADED)
+  // printf("ELF %p status %d.\n", spte->upage, spte->status);
+  if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
   {
-    if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
-    {
-      // printf("SWAPPING OUT ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
-      swap_out_elf(frame);
-      pagedir_clear_page(thread_current()->pagedir,spte->upage);
-      // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
-    }
-    else{
-      // printf("UNLOADING ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
-      spte->status=SPTE_ELF_NOT_LOADED;
-      // memset(frame->kpage, 0, PGSIZE);
-      pagedir_clear_page(thread_current()->pagedir,spte->upage);
-      // printf("ELF %p status %d.\n",spte->upage, spte->status);
-    }
-    return true;
+    frame->spte->status = SPTE_ELF_SWAPPED;
+    // printf("SWAPPING OUT ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
+    swap_out_elf(frame);
+    // pagedir_clear_page(frame->owner->pagedir,spte->upage);
+    // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
   }
-  return false;
+  else{
+    // printf("UNLOADING ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
+    spte->status=SPTE_ELF_NOT_LOADED;
+    memset(frame->kpage, 0, PGSIZE);
+    pagedir_clear_page(frame->owner->pagedir,spte->upage);
+    // printf("ELF %p status %d.\n",spte->upage, spte->status);
+  }
+  // printf("ELF %p status %d.\n", spte->upage, spte->status);
+  return true;
 }
 
 

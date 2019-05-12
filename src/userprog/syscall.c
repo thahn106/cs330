@@ -1,5 +1,6 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <hash.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -109,6 +110,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     	// arg[1] = get_physical_addr((const void *) arg[1]);
       check_ptr((void *) arg[1],esp);
     	f->eax = read(arg[0], (void *) arg[1], (unsigned) arg[2]);
+      free_buffer((void *) arg[1], (unsigned) arg[2]);
     	break;
     }
     case SYS_WRITE:
@@ -118,6 +120,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 	    // arg[1] = get_physical_addr((const void *) arg[1]);
       check_ptr((void *) arg[1],esp);
 	    f->eax = write(arg[0], (const void *) arg[1], (unsigned) arg[2]);
+      free_buffer((void *) arg[1], (unsigned) arg[2]);
       break;
     }
     case SYS_SEEK:
@@ -351,7 +354,8 @@ mmap (int fd, const void *addr)
   off_t offset;
   struct spte* spte;
   struct thread *curr = thread_current();
-  struct list *spt = &curr->spt;
+  struct hash *spt = &curr->spt;
+  struct list *mmap_list = &curr->mmap_list;
   mapid_t mapping;;
   /* Fail conditions */
   if (filesize(fd)==0)
@@ -381,6 +385,7 @@ mmap (int fd, const void *addr)
   for (offset = 0; offset < file_length(f); offset += PGSIZE)
   {
     spte = spt_add_entry(spt, addr+offset, true, SPTE_MMAP_NOT_LOADED);
+    list_push_back(mmap_list, &spte->mmap_elem);
     spte->offset = offset;
     spte->mapping = mapping;
     spte->file = file_reopen(f);
@@ -474,7 +479,7 @@ check_ptr (const void *vaddr, void * esp)
         success=true;
         break;
     }
-    spte->using = false;
+    // spte->using = false;
   }
   else
   {
@@ -523,5 +528,24 @@ check_string (const void *str, void* esp)
     {
       str = (char *) str + 1;
       check_ptr(str,esp);
+    }
+}
+
+void
+free_ptr(const void *vaddr) {
+  struct spte *spte = spt_get_page(&thread_current()->spt, pg_round_down(vaddr));
+  if (spte)
+    spte->using=false;
+}
+
+void
+free_buffer (void* buffer, unsigned size)
+{
+  unsigned i;
+  char* buf_ptr = (char *) buffer;
+  for (i = 0; i < size; i++)
+    {
+      free_ptr(buf_ptr);
+      buf_ptr++;
     }
 }

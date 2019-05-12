@@ -6,8 +6,9 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
-#include "vm/page.h"
 #include "vm/frame.h"
+#include "vm/page.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -158,14 +159,18 @@ page_fault (struct intr_frame *f)
      which fault_addr refers. */
 
   bool loaded = false;
-  // printf("Pg fault at %p.\n", fault_addr);
+  // printf("Pg fault at %p by %d.\n", fault_addr, thread_current()->tid);
   if (is_user_vaddr(fault_addr) && not_present && fault_addr > USER_VADDR_BOTTOM)
   {
     struct spte *spte = spt_get_page(&thread_current()->spt,fault_addr);
-    // printf("Pg %p with status %d.\n", spte->upage, spte->status);
     /* Not loaded */
-    if (spte!=NULL)
+    // if(spte==NULL)
+    //   {
+    //     printf("No such page %p.\n", fault_addr);
+    //   }
+    if(spte)
     {
+      // printf("Pg %p with status %d.\n", spte->upage, spte->status);
       spte->using = true;
       void* kpage = frame_get_page(PAL_USER|PAL_ZERO);
       struct frame *frame=frame_find(kpage);

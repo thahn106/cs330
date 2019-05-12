@@ -2,6 +2,7 @@
 #define VM_PAGE_H
 
 #include <list.h>
+#include <hash.h>
 #include "filesys/inode.h"
 #include "threads/thread.h"
 #include "vm/frame.h"
@@ -36,15 +37,24 @@ struct spte
   struct file *file;
   /* MMAP only */
   mapid_t mapping;
+  struct list_elem mmap_elem;
 
-  struct list_elem elem;
+  // struct list_elem elem;
+  struct hash_elem elem;
 };
 
-struct spte *spt_get_page (struct list*, void*);
-struct spte *spt_add_entry (struct list*, void*, bool, enum spte_status);
-bool spt_install_page (struct list*, void*, void* , bool, enum spte_status);
-void spt_uninstall_page (struct list*, void*);
-void spt_uninstall_all (struct list*);
+
+void spt_init(struct hash*);
+
+// struct spte *spt_get_page (struct list*, void*);
+// struct spte *spt_add_entry (struct list*, void*, bool, enum spte_status);
+// bool spt_install_page (struct list*, void*, void* , bool, enum spte_status);
+struct spte *spt_get_page (struct hash*, void*);
+struct spte *spt_add_entry (struct hash*, void*, bool, enum spte_status);
+bool spt_install_page (struct hash*, void*, void* , bool, enum spte_status);
+
+void spt_uninstall_page (struct hash*, void*);
+void spt_uninstall_all (struct hash*);
 void spt_munmap(mapid_t);
 
 bool spt_grow(void*);

@@ -1,5 +1,6 @@
 #include "threads/thread.h"
 #include <debug.h>
+#include <hash.h>
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/fixed_point.h"
+#include "vm/page.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -770,11 +772,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->fd = 2;              /* Skips stdin/stdout  */
   t->execfile = NULL;
 
-  /* Supplementary page table */
-  list_init(&t->spt);
+
 
   /* Mmap mapping */
+  // list_init(&t->spt);
+  
+  /* Supplementary page table */
   t->mapping = 0;
+  list_init(&t->mmap_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

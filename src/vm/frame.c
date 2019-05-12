@@ -1,7 +1,8 @@
 #include "vm/frame.h"
-#include "threads/thread.h"
-#include "threads/synch.h"
+#include "threads/interrupt.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
+#include "threads/thread.h"
 #include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/swap.h"
@@ -29,6 +30,7 @@ void
       if (!f->spte->using)
       {
         lock_acquire(&f->lock);
+        f->spte->using=true;
         success = frame_evict(f);
         if (!success)
           lock_release(&f->lock);
@@ -108,35 +110,39 @@ update_frame_spte(void* kpage, struct spte* spte)
 {
   struct frame* frame = frame_find(kpage);
   if (frame!=NULL)
+  {
     frame->spte=spte;
+    frame->owner=thread_current();
+  }
 }
 
 bool
 frame_evict(struct frame *frame)
 {
+  enum intr_level old_level = intr_disable();
   struct spte *spte= frame->spte;
-  // printf("EVICTING FRAME %p.\n", spte->upage);
+  // printf("EVICTING FRAME %p of %d.\n", spte->upage, frame->owner->tid);
   bool success=false;
   switch(spte->status)
   {
     case SPTE_MEMORY:
       // printf("SWAP_OUT %p.\n", spte->upage);
+      spte->status = SPTE_SWAPPED;
+      intr_set_level(old_level);
       success = swap_out(frame);
       break;
     case SPTE_ELF_LOADED:
-      // printf("SWAP_OUT_ELF %p.\n", spte->upage);
+      spte->status = SPTE_SWAPPED;
+      // printf("ELF_UNLOAD %p.\n", spte->upage);
+      intr_set_level(old_level);
       success = elf_unload(frame);
-      if (success){
-        int t= spte->status;
-        // printf("SWAP_OUT_ELF %p successful at frame_evict with status %d.\n", spte->upage, t);
-      }
-      // else printf("SWAP_OUT_ELF %p unsuccessful.\n", spte->upage);
       break;
     case SPTE_MMAP_LOADED:
-      // printf("SWAP_OUT_MMAP %p.\n", spte->upage);
+      intr_set_level(old_level);
       success = mmap_unload(spte);
       break;
     default:
+      intr_set_level(old_level);
       // printf("WEIRD STATUS %d.\n", spte->status);
       break;
   }

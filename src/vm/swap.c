@@ -99,7 +99,7 @@ swap_out (struct frame *frame)
   frame->spte->status = SPTE_SWAPPED;
   bitmap_set(swap_table, index, true);
   frame->spte->index = index;
-  pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
+  pagedir_clear_page(frame->owner->pagedir,frame->spte->upage);
 
   success=true;
   lock_release(&swap_lock);
@@ -140,20 +140,19 @@ swap_out_elf (struct frame *frame)
   bool success=false;
   size_t index;
   // printf("SWAPPING OUT ELF %p.\n",frame->spte->upage);
-  // lock_acquire(&frame->lock);
   /* Find free sector and swap out */
   lock_acquire(&swap_lock);
+  // lock_acquire(&frame->lock);
   index = bitmap_scan(swap_table, 0, 1, false);
   if (index == BITMAP_ERROR)
     return success;
 
-  frame->spte->status = SPTE_ELF_SWAPPED;
   write_to_disk(frame, index);
   // printf("ELF %p status %d.\n",frame->spte->upage, frame->spte->status);
   frame->spte->index = index;
   frame->spte->using = false;
   bitmap_set(swap_table, index, true);
-  // pagedir_clear_page(thread_current()->pagedir,frame->spte->upage);
+  pagedir_clear_page(frame->owner->pagedir,frame->spte->upage);
 
   success=true;
   // lock_release(&frame->lock);

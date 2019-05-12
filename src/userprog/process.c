@@ -72,9 +72,13 @@ start_process (void *f_name)
   char *file_name_str = f_name;
   char *save_ptr;
   file_name_str = strtok_r(file_name_str, " ", &save_ptr);
+  struct thread *curr = thread_current ();
+  spt_init(&curr->spt);
 
   struct intr_frame if_;
   bool success;
+
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -85,7 +89,6 @@ start_process (void *f_name)
 
   frame_free_page(f_name);
   //palloc_free_page (f_name);
-  struct thread *curr = thread_current ();
   if (!success)
   {
     curr->load_status = -1;   /* Load error */

@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <hash.h>
 #include <stdint.h>
 #include "threads/synch.h"
 
@@ -137,10 +138,12 @@ struct thread
     struct file* execfile;              /* Stores own executable as execfile */
 
     /* Supplementary page table */
-    struct list spt;
+    // struct list spt;
+    struct hash spt;
 
     /* Mmap */
     mapid_t mapping;
+    struct list mmap_list;
 
 
     /* Owned by thread.c. */
