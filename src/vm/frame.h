@@ -14,10 +14,6 @@ struct frame
   struct list_elem elem;
 };
 
-static struct list frame_list;
-static struct lock frame_list_lock;
-
-
 void frame_init(void);
 void *frame_get_page(enum palloc_flags);
 void frame_free_page(void*);

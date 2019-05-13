@@ -477,28 +477,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      // // uint8_t *kpage = palloc_get_page (PAL_USER);
-      // uint8_t *kpage = frame_get_page (PAL_USER);
-      // if (kpage == NULL)
-      //   return false;
-      //
-      // /* Load this page. */
-      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-      //   {
-      //     // palloc_free_page (kpage);
-      //     frame_free_page(kpage);
-      //     return false;
-      //   }
-      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
-      //
-      // /* Add the page to the process's address space. */
-      // if (!install_page (upage, kpage, writable))
-      // {
-      //   // palloc_free_page (kpage);
-      //   frame_free_page (kpage);
-      //   return false;
-      // }
       struct spte *spte = spt_add_entry(&thread_current()->spt, upage, writable, SPTE_ELF_NOT_LOADED);
       if (!spte)
         return false;
@@ -544,52 +522,59 @@ setup_stack (void **esp, const char* file_name, char** save_ptr)
     return success;
   }
 
-  char *str;
-  char **argv = malloc(2*sizeof(char *));
-  if (!argv)
-    return false;
 
+  //make argv list
+  //argv[0] = file name, argv[1...] = arguments
   int argc = 0;
-  int argv_size = 2;
-  for (str = (char *) file_name; str != NULL;
-       str = strtok_r (NULL, " ", save_ptr))
+  char *str;
+  void *argv[30];
+  int base[30];
+  for (str = (char *) file_name; str != NULL; str = strtok_r (NULL, " ", save_ptr))
   {
-    *esp -= strlen(str) + 1;
-    argv[argc] = *esp;
+    argv[argc] = str;
     argc++;
-
-    if (argc >= argv_size)
-    {
-      argv_size *= 2;
-      argv = realloc(argv, argv_size*sizeof(char *));
-      if (!argv)
-        return false;
-    }
-    memcpy(*esp, str, strlen(str) + 1);
+    // printf("argv is %s\n",(char*) str);
+    // printf("argc is %d\n",argc);
   }
-  argv[argc] = 0;
 
-  /* Align esp to word size (4 bytes) */
+  //sequentially, push argv[2],argv[1],argv[0] <= "real data"
+  int i;
+  for(i = argc-1; i > -1; i--)
+  {
+    *esp = *esp - strlen(argv[i]) - 1;
+    // printf("prepush\n");
+    memcpy((void*) *esp, argv[i], strlen(argv[i])+1);
+    //base에 집어넣은 주소 저장
+    base[i] = *esp;
+  }
+
+  //push word-align
   int offset = (size_t) *esp % 4;
   *esp -= offset;
-  memcpy(*esp, &argv[argc], offset);
+  memset(*esp, 0, offset);
 
-  int i;
-  for (i = argc; i >= 0; i--)
+  //sequentiallay, push *argv[3] = 0, *argv[2], *argv[1], *argv[0] <= address of real data
+  *esp -= 4;
+  memset(*esp, 0, 4);
+
+  for ( i = argc-1; i>-1; i--)
   {
-    *esp -= sizeof(char *);
-    memcpy(*esp, &argv[i], sizeof(char *));
+    *esp -= 4;
+    memcpy(*esp, &base[i], 4);
+    // printf("%p\n", (void *) *esp);
   }
 
-  /* Start building stack */
+  //push **argv <= adrress of *argv[0].
+  // printf("Pushing address of argv[0]\n");
   str = *esp;
-  *esp -= sizeof(char **);
-  memcpy(*esp, &str, sizeof(char **));
-  *esp -= sizeof(int);
-  memcpy(*esp, &argc, sizeof(int));
-  *esp -= sizeof(int *);
-  memcpy(*esp, &argv[argc], sizeof(int *));
-  free(argv);
+  *esp -= 4;
+  memcpy(*esp, &str, 4);
+  //push argc <= type int
+  *esp -= 4;
+  memcpy(*esp, &argc, 4);
+  //push return address
+  *esp -= 4;
+  memcpy(*esp, &argv[argc], 4);
 
   return success;
 }

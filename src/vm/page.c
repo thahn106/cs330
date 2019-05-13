@@ -15,13 +15,15 @@
 // void mmap_unload(struct spte *);
 
 
-static unsigned page_hash_func (const struct hash_elem *e, void *aux UNUSED)
+unsigned
+page_hash (const struct hash_elem *e, void *aux UNUSED)
 {
   struct spte *spte = hash_entry(e, struct spte, elem);
   return hash_int((int) spte->upage);
 }
 
-static bool page_less_func (const struct hash_elem *a,
+static
+bool page_less (const struct hash_elem *a,
 			    const struct hash_elem *b,
 			    void *aux UNUSED)
 {
@@ -34,7 +36,7 @@ static bool page_less_func (const struct hash_elem *a,
   return false;
 }
 
-static void page_action_func (struct hash_elem *e, void *aux UNUSED)
+static void page_destroy (struct hash_elem *e, void *aux UNUSED)
 {
   struct spte *spte = hash_entry(e, struct spte, elem);
   mmap_unload(spte);
@@ -45,7 +47,7 @@ static void page_action_func (struct hash_elem *e, void *aux UNUSED)
 
 void
 spt_init(struct hash *spt){
-  hash_init(spt, page_hash_func, page_less_func, NULL);
+  hash_init(spt, page_hash, page_less, NULL);
 }
 
 
@@ -122,7 +124,7 @@ spt_uninstall_page(struct hash *spt, void *upage)
 void
 spt_uninstall_all(struct hash *spt)
 {
-  hash_destroy (spt, page_action_func);
+  hash_destroy (spt, page_destroy);
 }
 
 void
@@ -205,10 +207,9 @@ load_elf (struct spte* spte, void *kpage)
 bool
 elf_unload(struct frame* frame)
 {
-  struct thread *curr = thread_current();
   struct spte *spte = frame->spte;
   // printf("ELF %p status %d.\n", spte->upage, spte->status);
-  if(spte->writable && pagedir_is_dirty(curr->pagedir, spte->upage))
+  if(spte->writable && pagedir_is_dirty(frame->owner->pagedir, spte->upage))
   {
     frame->spte->status = SPTE_ELF_SWAPPED;
     // printf("SWAPPING OUT ELF %p status %d.\n",frame->spte->upage, frame->spte->status);

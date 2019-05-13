@@ -3,6 +3,7 @@
 #include "devices/disk.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "vm/frame.h"
 #include "vm/page.h"
@@ -27,7 +28,7 @@ swap_init (void)
   swap_device = disk_get(1,1);
   swap_table = bitmap_create(disk_size(swap_device)/SECTORS_PER_PAGE);
   bitmap_set_all (swap_table, false);
-  printf("swap initialized.\n");
+  // printf("swap initialized.\n");
   lock_init(&swap_lock);
 }
 

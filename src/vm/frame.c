@@ -7,6 +7,9 @@
 #include "vm/page.h"
 #include "vm/swap.h"
 
+static struct list frame_list;
+static struct lock frame_list_lock;
+
 void
 frame_init(void)
 {
