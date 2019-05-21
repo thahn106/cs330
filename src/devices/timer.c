@@ -8,6 +8,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "filesys/cache.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -159,6 +160,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
     {
         mlfqs_check(thread_current());
     }
+
+    if (ticks % 100 == 0)
+        cache_flush();
   }
 
   /* Wakes up sleeping threads if alarm is scheduled  */

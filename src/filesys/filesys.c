@@ -23,10 +23,11 @@ filesys_init (bool format)
   if (filesys_disk == NULL)
     PANIC ("hd0:1 (hdb) not present, file system initialization failed");
 
+  cache_init();
+  
   inode_init ();
   free_map_init ();
 
-  cache_init();
 
   if (format)
     do_format ();
@@ -39,6 +40,7 @@ filesys_init (bool format)
 void
 filesys_done (void)
 {
+  cache_evict_all();
   free_map_close ();
 }
 
