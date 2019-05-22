@@ -1,7 +1,9 @@
 #include "filesys/cache.h"
 #include "devices/disk.h"
 #include "threads/palloc.h"
+#include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 #include "filesys/inode.h"
 
 #define BUFFER_CACHE_SIZE 64
@@ -10,6 +12,20 @@
 static struct disk *file_disk;
 static struct cache cache_list[BUFFER_CACHE_SIZE];
 
+/* Synchronization */
+static struct lock cache_lock;
+struct semaphore cache_sema;
+static struct list job_list;
+static void read_ahead_cache(void *);
+
+struct job
+{
+  disk_sector_t sector;
+  struct inode *inode;
+  struct list_elem elem;
+};
+
+int cache_search(disk_sector_t);
 int cache_get(disk_sector_t, struct inode*);
 void cache_disk_read(int);
 void cache_disk_write(int);
@@ -21,6 +37,12 @@ void
 cache_init (void)
 {
   file_disk = disk_get(0,1);
+  lock_init(&cache_lock);
+
+  sema_init(&cache_sema, 0);
+  list_init(&job_list);
+  thread_create("CACHE_WORKER", PRI_DEFAULT, read_ahead_cache, NULL);
+
   int i, j;
   for (i = 0;i< BUFFER_CACHE_SIZE/ SECTORS_PER_PAGE; i++)
   {
@@ -36,34 +58,40 @@ cache_init (void)
 void
 cache_flush(void)
 {
+  lock_acquire(&cache_lock);
   int i;
   for (i=0; i < BUFFER_CACHE_SIZE; i++)
   {
     if (cache_list[i].using && cache_list[i].dirty)
     cache_disk_write(i);
   }
+  lock_release(&cache_lock);
 }
 
 void
 cache_evict_all(void)
 {
+  lock_acquire(&cache_lock);
   int i;
   for (i=0; i < BUFFER_CACHE_SIZE; i++)
   {
     if (cache_list[i].using)
       cache_evict(i);
   }
+  lock_release(&cache_lock);
 }
 
 void
 cache_evict_inode(struct inode *inode)
 {
+  lock_acquire(&cache_lock);
   int i;
   for (i=0; i < BUFFER_CACHE_SIZE; i++)
   {
     if (cache_list[i].using && cache_list[i].inode == inode)
       cache_evict(i);
   }
+  lock_release(&cache_lock);
 }
 
 /* Finds if a sector is in cache, returns -1 if not found. */
@@ -82,17 +110,31 @@ cache_search(disk_sector_t index)
 void *
 cache_load(disk_sector_t sector, struct inode *inode)
 {
+  lock_acquire(&cache_lock);
   int index = cache_search(sector);
   if (index == -1)
     index = cache_get(sector, inode);
+  lock_release(&cache_lock);
   return cache_list[index].kpage;
+}
+
+void
+cache_load_next(disk_sector_t sector, struct inode *inode)
+{
+  struct job *job = malloc(sizeof(struct job));
+  job->sector = sector;
+  job->inode = inode;
+  list_push_back(&job_list, &job->elem);
+  sema_up(&cache_sema);
 }
 
 void
 cache_set_dirty(disk_sector_t sector)
 {
+  lock_acquire(&cache_lock);
   int index = cache_search(sector);
   cache_list[index].dirty = true;
+  lock_release(&cache_lock);
 }
 
 
@@ -163,4 +205,17 @@ clock_next(void){
   clock++;
   clock = clock % 64;
   return clock;
+}
+
+static void
+read_ahead_cache (void *aux)
+{
+  struct job *job;
+  while(true)
+  {
+    sema_down(&cache_sema);
+    job = list_entry(list_pop_front(&job_list), struct job, elem);
+    cache_load(job->sector, job->inode);
+    free(job);
+  }
 }
